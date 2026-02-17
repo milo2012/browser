@@ -371,7 +371,8 @@ pub fn BrowserContext(comptime CDP_T: type) type {
         isolated_worlds: std.ArrayList(*IsolatedWorld),
 
         http_proxy_changed: bool = false,
-
+        user_agent_override: ?[]const u8 = null,
+        
         // Extra headers to add to all requests.
         extra_headers: std.ArrayList([*c]const u8) = .empty,
 

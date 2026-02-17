@@ -62,6 +62,7 @@ pub fn main() !void {
         .common = .{
             .tls_verify_host = false,
             .user_agent_suffix = "internal-tester",
+            .user_agent = cmd.user_agent,
         },
     } });
     defer config.deinit(allocator);
@@ -317,6 +318,7 @@ const Writer = struct {
 const Command = struct {
     format: Writer.Format,
     filters: [][]const u8,
+    user_agent: ?[]const u8 = null,
 };
 
 fn parseArgs(arena: Allocator) !Command {
@@ -328,6 +330,7 @@ fn parseArgs(arena: Allocator) !Command {
         \\  --json           result is formatted in JSON.
         \\  --summary        print a summary result. Incompatible w/ --json or --quiet
         \\  --quiet          No output. Incompatible w/ --json or --summary
+        \\  --user_agent     Override the User-Agent string sent with requests.
         \\
     ;
 
@@ -338,6 +341,7 @@ fn parseArgs(arena: Allocator) !Command {
 
     var format = Writer.Format.text;
     var filters: std.ArrayList([]const u8) = .{};
+    var user_agent: ?[]const u8 = null;
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, "-h", arg) or std.mem.eql(u8, "--help", arg)) {
@@ -351,6 +355,11 @@ fn parseArgs(arena: Allocator) !Command {
             format = .summary;
         } else if (std.mem.eql(u8, "--quiet", arg)) {
             format = .quiet;
+        } else if (std.mem.eql(u8, "--user_agent", arg)) {
+            user_agent = args.next() orelse {
+                std.debug.print("error: --user_agent requires a value\n", .{});
+                std.posix.exit(1);
+            };
         } else {
             try filters.append(arena, arg);
         }
@@ -359,6 +368,7 @@ fn parseArgs(arena: Allocator) !Command {
     return .{
         .format = format,
         .filters = filters.items,
+        .user_agent = user_agent,
     };
 }
 

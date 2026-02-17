@@ -138,6 +138,13 @@ pub fn logFilterScopes(self: *const Config) ?[]const log.Scope {
     };
 }
 
+pub fn userAgent(self: *const Config) ?[]const u8 {
+    return switch (self.mode) {
+        inline .serve, .fetch => |opts| opts.common.user_agent,
+        .help, .version => null,
+    };
+}
+
 pub fn userAgentSuffix(self: *const Config) ?[]const u8 {
     return switch (self.mode) {
         inline .serve, .fetch => |opts| opts.common.user_agent_suffix,
@@ -184,6 +191,7 @@ pub const Common = struct {
     log_level: ?log.Level = null,
     log_format: ?log.Format = null,
     log_filter_scopes: ?[]log.Scope = null,
+    user_agent: ?[]const u8 = null,
     user_agent_suffix: ?[]const u8 = null,
 };
 
@@ -198,11 +206,13 @@ pub const HttpHeaders = struct {
     proxy_bearer_header: ?[:0]const u8,
 
     pub fn init(allocator: Allocator, config: *const Config) !HttpHeaders {
-        const user_agent: [:0]const u8 = if (config.userAgentSuffix()) |suffix|
+        const user_agent: [:0]const u8 = if (config.userAgent()) |ua|
+            try allocator.dupeZ(u8, ua)
+        else if (config.userAgentSuffix()) |suffix|
             try std.fmt.allocPrintSentinel(allocator, "{s} {s}", .{ user_agent_base, suffix }, 0)
         else
             user_agent_base;
-        errdefer if (config.userAgentSuffix() != null) allocator.free(user_agent);
+        errdefer if (user_agent.ptr != user_agent_base.ptr) allocator.free(user_agent);
 
         const user_agent_header = try std.fmt.allocPrintSentinel(allocator, "User-Agent: {s}", .{user_agent}, 0);
         errdefer allocator.free(user_agent_header);
@@ -291,6 +301,9 @@ pub fn printUsageAndExit(self: *const Config, success: bool) void {
         \\
         \\--user_agent_suffix
         \\                Suffix to append to the Lightpanda/X.Y User-Agent
+        \\
+        \\--user_agent    Override the entire User-Agent string.
+        \\                Takes precedence over --user_agent_suffix.
         \\
     ;
 
@@ -793,6 +806,21 @@ fn parseCommonArg(
             }
         }
         common.user_agent_suffix = try allocator.dupe(u8, str);
+        return true;
+    }
+
+    if (std.mem.eql(u8, "--user_agent", opt)) {
+        const str = args.next() orelse {
+            log.fatal(.app, "missing argument value", .{ .arg = "--user_agent" });
+            return error.InvalidArgument;
+        };
+        for (str) |c| {
+            if (!std.ascii.isPrint(c)) {
+                log.fatal(.app, "not printable character", .{ .arg = "--user_agent" });
+                return error.InvalidArgument;
+            }
+        }
+        common.user_agent = try allocator.dupe(u8, str);
         return true;
     }
 

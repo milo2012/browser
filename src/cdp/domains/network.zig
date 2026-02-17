@@ -45,7 +45,7 @@ pub fn processMessage(cmd: anytype) !void {
         .enable => return enable(cmd),
         .disable => return disable(cmd),
         .setCacheDisabled => return cmd.sendResult(null, .{}),
-        .setUserAgentOverride => return cmd.sendResult(null, .{}),
+        .setUserAgentOverride => return setUserAgentOverride(cmd),
         .setExtraHTTPHeaders => return setExtraHTTPHeaders(cmd),
         .deleteCookies => return deleteCookies(cmd),
         .clearBrowserCookies => return clearBrowserCookies(cmd),
@@ -54,6 +54,20 @@ pub fn processMessage(cmd: anytype) !void {
         .getCookies => return getCookies(cmd),
         .getResponseBody => return getResponseBody(cmd),
     }
+}
+
+
+fn setUserAgentOverride(cmd: anytype) !void {
+    const params = (try cmd.params(struct {
+        userAgent: []const u8,
+        acceptLanguage: ?[]const u8 = null,
+        platform: ?[]const u8 = null,
+    })) orelse return error.InvalidParams;
+
+    const bc = cmd.browser_context orelse return error.BrowserContextNotLoaded;
+    bc.user_agent_override = try bc.arena.dupe(u8, params.userAgent);
+
+    return cmd.sendResult(null, .{});
 }
 
 fn enable(cmd: anytype) !void {
@@ -235,6 +249,13 @@ pub fn httpRequestStart(arena: Allocator, bc: anytype, msg: *const Notification.
 
     const target_id = bc.target_id orelse unreachable;
     const page = bc.session.currentPage() orelse unreachable;
+
+    // Modify request with extra CDP headers
+    // Apply User-Agent override if set via Network.setUserAgentOverride
+    if (bc.user_agent_override) |ua| {
+        const hdr = try std.fmt.allocPrintSentinel(arena, "User-Agent: {s}", .{ua}, 0);
+        try msg.transfer.req.headers.add(hdr);
+    }
 
     // Modify request with extra CDP headers
     for (bc.extra_headers.items) |extra| {
